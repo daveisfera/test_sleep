@@ -49,12 +49,16 @@ struct thread_info {
   diff = malloc(sizeof(long long)); \
   gettimeofday(&before, NULL)
   
-#define DO_WORK() \
-  pseed = 1; \
-  for (bnum=0; bnum<work_size; ++bnum) { \
-    pseed = pseed * 1103515245 + 12345; \
-    buf[bnum] = (pseed / 65536) % 32768; \
-  }
+#define DO_WORK(SLEEP_FUNC) \
+  for (inum=0; inum<num_iterations; ++inum) { \
+    SLEEP_FUNC \
+     \
+    pseed = 1; \
+    for (bnum=0; bnum<work_size; ++bnum) { \
+      pseed = pseed * 1103515245 + 12345; \
+      buf[bnum] = (pseed / 65536) % 32768; \
+    } \
+  } \
 
 #define FINISH_WORK() \
   gettimeofday(&after, NULL); \
@@ -70,9 +74,7 @@ long long *do_work_nosleep(const int sleep_time, const int num_iterations, const
   // Let the compiler know that sleep_time isn't used in this function
   (void)sleep_time;
 
-  for (inum=0; inum<num_iterations; ++inum) {
-    DO_WORK();
-  }
+  DO_WORK();
 
   FINISH_WORK();
 }
@@ -82,13 +84,11 @@ long long *do_work_select(const int sleep_time, const int num_iterations, const 
   struct timeval ts;
   DECLARE_WORK();
 
-  for (inum=0; inum<num_iterations; ++inum) {
+  DO_WORK(
     ts.tv_sec = 0;
     ts.tv_usec = sleep_time;
     select(0, 0, 0, 0, &ts);
-
-    DO_WORK();
-  }
+    );
 
   FINISH_WORK();
 }
@@ -102,11 +102,9 @@ long long *do_work_poll(const int sleep_time, const int num_iterations, const in
   pfd.fd = 0;
   pfd.events = 0;
 
-  for (inum=0; inum<num_iterations; ++inum) {
+  DO_WORK(
     poll(&pfd, 1, sleep_time_ms);
-
-    DO_WORK();
-  }
+    );
 
   FINISH_WORK();
 }
@@ -115,11 +113,9 @@ long long *do_work_usleep(const int sleep_time, const int num_iterations, const 
 {
   DECLARE_WORK();
 
-  for (inum=0; inum<num_iterations; ++inum) {
+  DO_WORK(
     usleep(sleep_time);
-
-    DO_WORK();
-  }
+    );
 
   FINISH_WORK();
 }
@@ -131,11 +127,9 @@ long long *do_work_yield(const int sleep_time, const int num_iterations, const i
   // Let the compiler know that sleep_time isn't used in this function
   (void)sleep_time;
 
-  for (inum=0; inum<num_iterations; ++inum) {
+  DO_WORK(
     sched_yield();
-
-    DO_WORK();
-  }
+    );
 
   FINISH_WORK();
 }
