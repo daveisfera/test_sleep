@@ -96,13 +96,14 @@ void *do_test(void *arg)
 
 int main(int argc, char **argv)
 {
-  if (argc < 4) {
-    printf("Usage: %s <sleep_time> <num_iterations> <work_size> <num_threads>\n", argv[0]);
+  if (argc < 5) {
+    printf("Usage: %s <sleep_time> <outer_iterations> <inner_iterations> <work_size> <num_threads>\n", argv[0]);
     return -1;
   }
 
   struct thread_info tinfo;
-  int s, tnum, num_threads;
+  int outer_iterations;
+  int s, inum, tnum, num_threads;
   pthread_attr_t attr;
   pthread_t *threads;
   long long *res;
@@ -110,9 +111,10 @@ int main(int argc, char **argv)
 
   // Get the parameters
   tinfo.sleep_time = atoi(argv[1]);
-  tinfo.num_iterations = atoi(argv[2]);
-  tinfo.work_size = atoi(argv[3]) * 1024;
-  num_threads = atoi(argv[4]);
+  outer_iterations = atoi(argv[2]);
+  tinfo.num_iterations = atoi(argv[3]);
+  tinfo.work_size = atoi(argv[4]) * 1024;
+  num_threads = atoi(argv[5]);
 
   // Initialize the thread creation attributes
   s = pthread_attr_init(&attr);
@@ -129,57 +131,62 @@ int main(int argc, char **argv)
     return -3;
   }
 
-  // Start all of the threads
-  for (tnum=0; tnum<num_threads; ++tnum) {
-    s = pthread_create(&threads[tnum], &attr, &do_test, &tinfo);
-
-    if (s != 0) {
-      printf("Error starting thread\n");
-      return -4;
-    }
-  }
-
-  // Clean up the thread creation attributes
-  s = pthread_attr_destroy(&attr);
-  if (s != 0) {
-    printf("Error cleaning up thread attributes\n");
-    return -5;
-  }
-
-  // Wait for all the threads to finish
-  for (tnum=0; tnum<num_threads; ++tnum) {
-    s = pthread_join(threads[tnum], (void **)(&res));
-
-    if (s != 0) {
-      printf("Error waiting for thread\n");
-      return -6;
-    }
-
-    // Save the time
-    times[tnum] = *res;
-
-    // And clean it up
-    free(res);
-  }
-
-  // Calculate the min, max, and average times
+  // Calculate the statistics of the processing
   float min_time = FLT_MAX;
   float max_time = -FLT_MAX;
   float avg_time = 0;
-  for (tnum=0; tnum<num_threads; ++tnum) {
-    if (times[tnum] < min_time)
-      min_time = times[tnum];
-    if (times[tnum] > max_time)
-      max_time = times[tnum];
-    avg_time += (times[tnum] - avg_time) / (float)(tnum + 1);
-  }
-  // Calculate the standard deviation of the time
+  float prev_avg_time = 0;
   float stddev_time = 0;
-  if (num_threads > 1) {
-    for (tnum=0; tnum<num_threads; ++tnum)
-      stddev_time += pow(times[tnum] - avg_time, 2);
-    stddev_time = sqrtf(stddev_time / (num_threads - 1));
+
+  // Perform the requested number of outer iterations
+  for (inum=0; inum<outer_iterations; ++inum) {
+    // Start all of the threads
+    for (tnum=0; tnum<num_threads; ++tnum) {
+      s = pthread_create(&threads[tnum], &attr, &do_test, &tinfo);
+
+      if (s != 0) {
+        printf("Error starting thread\n");
+        return -4;
+      }
+    }
+
+    // Clean up the thread creation attributes
+    s = pthread_attr_destroy(&attr);
+    if (s != 0) {
+      printf("Error cleaning up thread attributes\n");
+      return -5;
+    }
+
+    // Wait for all the threads to finish
+    for (tnum=0; tnum<num_threads; ++tnum) {
+      s = pthread_join(threads[tnum], (void **)(&res));
+
+      if (s != 0) {
+        printf("Error waiting for thread\n");
+        return -6;
+      }
+
+      // Save the time
+      times[tnum] = *res;
+
+      // And clean it up
+      free(res);
+    }
+
+    // Update the statistics
+    for (tnum=0; tnum<num_threads; ++tnum) {
+      if (times[tnum] < min_time)
+        min_time = times[tnum];
+      if (times[tnum] > max_time)
+        max_time = times[tnum];
+      avg_time += (times[tnum] - avg_time) / (float)(tnum + 1);
+      stddev_time += (times[tnum] - prev_avg_time) * (times[tnum] - avg_time);
+      prev_avg_time = avg_time;
+    }
   }
+
+  // Finish the calculation of the standard deviation
+  stddev_time = sqrtf(stddev_time / ((outer_iterations * num_threads) - 1));
 
   // Print out the statistics of the times
   printf("time_per_iteration: min: %.1f us avg: %.1f us max: %.1f us stddev: %.1f us\n",
