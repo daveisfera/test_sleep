@@ -15,7 +15,8 @@ enum sleep_type {
   SLEEP_TYPE_NONE,
   SLEEP_TYPE_SELECT,
   SLEEP_TYPE_POLL,
-  SLEEP_TYPE_USLEEP
+  SLEEP_TYPE_USLEEP,
+  SLEEP_TYPE_YIELD,
 };
 
 // Function type for doing work with a sleep
@@ -123,6 +124,22 @@ long long *do_work_usleep(const int sleep_time, const int num_iterations, const 
   FINISH_WORK();
 }
 
+long long *do_work_yield(const int sleep_time, const int num_iterations, const int work_size)
+{
+  DECLARE_WORK();
+
+  // Let the compiler know that sleep_time isn't used in this function
+  (void)sleep_time;
+
+  for (inum=0; inum<num_iterations; ++inum) {
+    sched_yield();
+
+    DO_WORK();
+  }
+
+  FINISH_WORK();
+}
+
 void *do_test(void *arg)
 {
   const struct thread_info *tinfo = (struct thread_info *)arg;
@@ -135,6 +152,11 @@ int main(int argc, char **argv)
 {
   if (argc < 6) {
     printf("Usage: %s <sleep_time> <outer_iterations> <inner_iterations> <work_size> <num_threads> <sleep_type>\n", argv[0]);
+    printf("  outer_iterations: Number of iterations for each thread (used to calculate statistics)\n");
+    printf("  inner_iterations: Number of work/sleep cycles performed in each thread (used to improve consistency/observability))\n");
+    printf("  work_size: Number of array elements (in kb) that are filled with psuedo-random numbers\n");
+    printf("  num_threads: Number of threads to spawn and perform work/sleep cycles in\n");
+    printf("  sleep_type: 0=none 1=select 2=poll 3=usleep 4=yield\n");
     return -1;
   }
 
@@ -159,6 +181,7 @@ int main(int argc, char **argv)
     case SLEEP_TYPE_SELECT: tinfo.func = &do_work_select;  break;
     case SLEEP_TYPE_POLL:   tinfo.func = &do_work_poll;    break;
     case SLEEP_TYPE_USLEEP: tinfo.func = &do_work_usleep;  break;
+    case SLEEP_TYPE_YIELD:  tinfo.func = &do_work_yield;   break;
     default:
       printf("Invalid sleep type: %d\n", sleep_type);
       return -7;
