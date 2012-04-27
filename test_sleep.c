@@ -9,100 +9,138 @@
 #include <sys/time.h>
 
 
-// Uncomment to use select inside the loop of each of the threads
-//#define SLEEP_TYPE 1
-// Uncomment to use poll inside the loop of each of the threads
-//#define SLEEP_TYPE 2
-// Uncomment to use usleep inside the loop of each of the threads
-//#define SLEEP_TYPE 3
 
+// The different type of sleep that are supported
+enum sleep_type {
+  SLEEP_TYPE_NONE,
+  SLEEP_TYPE_SELECT,
+  SLEEP_TYPE_POLL,
+  SLEEP_TYPE_USLEEP
+};
 
+// Function type for doing work with a sleep
+typedef long long *(*work_func)(const int sleep_time, const int num_iterations, const int work_size);
+
+// Information passed to the thread
 struct thread_info {
   int sleep_time;
   int num_iterations;
   int work_size;
+  work_func func;
 };
+
+// In order to make SLEEP_TYPE a run-time parameter function pointers are used.
+// The function pointer could have been to the sleep function being used, but
+// then that would mean an extra function call inside of the "work loop" and I
+// wanted to keep the measurements as tight as possible and the extra work being
+// done to be as small/controlled as possible so instead the work is declared as
+// a seriees of macros that are called in all of the sleep functions. The code
+// is a bit uglier this way, but I believe it results in a more accurate test.
+
+// Fill in a buffer with random numbers (taken from latt.c by Jens Axboe <jens.axboe@oracle.com>)
+#define DECLARE_WORK() \
+  int *buf; \
+  int pseed; \
+  int inum, bnum; \
+  struct timeval before, after; \
+  long long *diff; \
+  buf = calloc(work_size, sizeof(int)); \
+  diff = malloc(sizeof(long long)); \
+  gettimeofday(&before, NULL)
+  
+#define DO_WORK() \
+  pseed = 1; \
+  for (bnum=0; bnum<work_size; ++bnum) { \
+    pseed = pseed * 1103515245 + 12345; \
+    buf[bnum] = (pseed / 65536) % 32768; \
+  }
+
+#define FINISH_WORK() \
+  gettimeofday(&after, NULL); \
+  *diff = 1000000LL * (after.tv_sec - before.tv_sec); \
+  *diff += after.tv_usec - before.tv_usec; \
+  free(buf); \
+  return diff
+
+long long *do_work_nosleep(const int sleep_time, const int num_iterations, const int work_size)
+{
+  DECLARE_WORK();
+
+  // Let the compiler know that sleep_time isn't used in this function
+  (void)sleep_time;
+
+  for (inum=0; inum<num_iterations; ++inum) {
+    DO_WORK();
+  }
+
+  FINISH_WORK();
+}
+
+long long *do_work_select(const int sleep_time, const int num_iterations, const int work_size)
+{
+  struct timeval ts;
+  DECLARE_WORK();
+
+  for (inum=0; inum<num_iterations; ++inum) {
+    ts.tv_sec = 0;
+    ts.tv_usec = sleep_time;
+    select(0, 0, 0, 0, &ts);
+
+    DO_WORK();
+  }
+
+  FINISH_WORK();
+}
+
+long long *do_work_poll(const int sleep_time, const int num_iterations, const int work_size)
+{
+  struct pollfd pfd;
+  const int sleep_time_ms = sleep_time / 1000;
+  DECLARE_WORK();
+
+  pfd.fd = 0;
+  pfd.events = 0;
+
+  for (inum=0; inum<num_iterations; ++inum) {
+    poll(&pfd, 1, sleep_time_ms);
+
+    DO_WORK();
+  }
+
+  FINISH_WORK();
+}
+
+long long *do_work_usleep(const int sleep_time, const int num_iterations, const int work_size)
+{
+  DECLARE_WORK();
+
+  for (inum=0; inum<num_iterations; ++inum) {
+    usleep(sleep_time);
+
+    DO_WORK();
+  }
+
+  FINISH_WORK();
+}
 
 void *do_test(void *arg)
 {
   const struct thread_info *tinfo = (struct thread_info *)arg;
 
-  const int sleep_time = tinfo->sleep_time;
-  const int num_iterations = tinfo->num_iterations;
-  const int work_size = tinfo->work_size;
-
-#if SLEEP_TYPE == 1
-  // Data for calling select
-  struct timeval ts;
-#elif SLEEP_TYPE == 2
-  // Data for calling poll
-  struct pollfd pfd;
-#endif
-  // Data for doing work
-  int *buf;
-  int pseed;
-  int inum, bnum;
-  // Data for tracking the time
-  struct timeval before, after;
-  long long *diff;
-
-  buf = calloc(work_size, sizeof(int));
-  diff = malloc(sizeof(unsigned long long));
-
-#if SLEEP_TYPE == 2
-  // Initialize the poll data
-  pfd.fd = 0;
-  pfd.events = 0;
-#endif
-
-  // Get the time before starting the processing
-  gettimeofday(&before, NULL);
-
-  // Do the requested number of iterations
-  for (inum=0; inum<num_iterations; ++inum) {
-#if SLEEP_TYPE == 1
-    ts.tv_sec = 0;
-    ts.tv_usec = sleep_time;
-    select(0, 0, 0, 0, &ts);
-#elif SLEEP_TYPE == 2
-    poll(&pfd, 1, sleep_time / 1000);
-#elif SLEEP_TYPE == 3
-    usleep(sleep_time);
-#else
-    // Get rid of warning about unused variable
-    (void)sleep_time;
-#endif
-
-    // Fill in a buffer with random numbers (taken from latt.c by Jens Axboe <jens.axboe@oracle.com>)
-    pseed = 1;
-    for (bnum=0; bnum<work_size; ++bnum) {
-      pseed = pseed * 1103515245 + 12345;
-      buf[bnum] = (pseed / 65536) % 32768;
-    }
-  }
-
-  // Get the time after starting the processing
-  gettimeofday(&after, NULL);
-
-  // Calculate the delta time
-  *diff = 1000000LL * (after.tv_sec - before.tv_sec);
-  *diff += after.tv_usec - before.tv_usec;
-
-  // Clean up the data
-  free(buf);
-
-  return diff;
+  // Call the function to do the work
+  return (*tinfo->func)(tinfo->sleep_time, tinfo->num_iterations, tinfo->work_size);
 }
 
 int main(int argc, char **argv)
 {
-  if (argc < 5) {
-    printf("Usage: %s <sleep_time> <outer_iterations> <inner_iterations> <work_size> <num_threads>\n", argv[0]);
+  if (argc < 6) {
+    printf("Usage: %s <sleep_time> <outer_iterations> <inner_iterations> <work_size> <num_threads> <sleep_type>\n", argv[0]);
     return -1;
   }
 
   struct thread_info tinfo;
   int outer_iterations;
+  int sleep_type;
   int s, inum, tnum, num_threads;
   pthread_attr_t attr;
   pthread_t *threads;
@@ -115,6 +153,16 @@ int main(int argc, char **argv)
   tinfo.num_iterations = atoi(argv[3]);
   tinfo.work_size = atoi(argv[4]) * 1024;
   num_threads = atoi(argv[5]);
+  sleep_type = atoi(argv[6]);
+  switch (sleep_type) {
+    case SLEEP_TYPE_NONE:   tinfo.func = &do_work_nosleep; break;
+    case SLEEP_TYPE_SELECT: tinfo.func = &do_work_select;  break;
+    case SLEEP_TYPE_POLL:   tinfo.func = &do_work_poll;    break;
+    case SLEEP_TYPE_USLEEP: tinfo.func = &do_work_usleep;  break;
+    default:
+      printf("Invalid sleep type: %d\n", sleep_type);
+      return -7;
+  }
 
   // Initialize the thread creation attributes
   s = pthread_attr_init(&attr);
