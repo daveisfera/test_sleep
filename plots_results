@@ -1,0 +1,28 @@
+#!/bin/bash
+
+if [ $# -ne 1 ]; then
+	echo "Usage: `basename $0` <max_sleep_type>"
+	exit -1
+fi
+
+# The names of each of the SLEEP_TYPES
+names=( "none" "select" "poll" "usleep" "sched_yield" )
+
+# Create the file to plot the results using gnuplot
+echo "set key left top;" > results.gp
+echo "plot \\" >> results.gp
+for i in $(seq 0 $1)
+do
+	# Convert the results file to a format for gnuplot
+	awk '{print NR, $6, $12}' "results_$i.txt" > "results_$i.dat"
+	# Add the plot command to gnuplot
+	echo "'results_$i.dat' title '${names[$i]}' w errorlines \\" >> results.gp
+	if [ $i -eq $1 ]; then
+		echo "; \\" >> results.gp
+	else
+		echo ", \\" >> results.gp
+	fi
+done
+
+# Plot the results with gnuplot
+gnuplot -p results.gp
