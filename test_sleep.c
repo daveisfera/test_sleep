@@ -144,7 +144,7 @@ void *do_test(void *arg)
 
 int main(int argc, char **argv)
 {
-  if (argc < 6) {
+  if (argc <= 6) {
     printf("Usage: %s <sleep_time> <outer_iterations> <inner_iterations> <work_size> <num_threads> <sleep_type>\n", argv[0]);
     printf("  outer_iterations: Number of iterations for each thread (used to calculate statistics)\n");
     printf("  inner_iterations: Number of work/sleep cycles performed in each thread (used to improve consistency/observability))\n");
