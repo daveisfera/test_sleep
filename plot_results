@@ -6,7 +6,7 @@ if [ $# -ne 1 ]; then
 fi
 
 # The names of each of the SLEEP_TYPES
-names=( "none" "select" "poll" "usleep" "sched_yield" )
+names=( "none" "select" "poll" "usleep" "sched_yield" "pthread_cond")
 
 # Create the file to plot the results using gnuplot
 echo "set key left top;" > results.gp

@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include <unistd.h>
 #include <sys/select.h>
 #include <sys/time.h>
@@ -17,6 +18,7 @@ enum sleep_type {
   SLEEP_TYPE_POLL,
   SLEEP_TYPE_USLEEP,
   SLEEP_TYPE_YIELD,
+  SLEEP_TYPE_PTHREAD_COND,
 };
 
 // Function type for doing work with a sleep
@@ -134,6 +136,34 @@ long long *do_work_yield(const int sleep_time, const int num_iterations, const i
   FINISH_WORK();
 }
 
+long long *do_work_pthread_cond(const int sleep_time, const int num_iterations, const int work_size)
+{
+  pthread_cond_t cond  = PTHREAD_COND_INITIALIZER;
+  pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+  struct timespec ts;
+  const int sleep_time_ns = sleep_time * 1000;
+  DECLARE_WORK();
+
+  pthread_mutex_lock(&mutex);
+
+  DO_WORK(
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_nsec += sleep_time_ns;
+    if (ts.tv_nsec >= 1000000000) {
+      ts.tv_sec += 1;
+      ts.tv_nsec -= 1000000000;
+    }
+    pthread_cond_timedwait(&cond, &mutex, &ts);
+    );
+
+  pthread_mutex_unlock(&mutex);
+
+  pthread_cond_destroy(&cond);
+  pthread_mutex_destroy(&mutex);
+
+  FINISH_WORK();
+}
+
 void *do_test(void *arg)
 {
   const struct thread_info *tinfo = (struct thread_info *)arg;
@@ -150,7 +180,7 @@ int main(int argc, char **argv)
     printf("  inner_iterations: Number of work/sleep cycles performed in each thread (used to improve consistency/observability))\n");
     printf("  work_size: Number of array elements (in kb) that are filled with psuedo-random numbers\n");
     printf("  num_threads: Number of threads to spawn and perform work/sleep cycles in\n");
-    printf("  sleep_type: 0=none 1=select 2=poll 3=usleep 4=yield\n");
+    printf("  sleep_type: 0=none 1=select 2=poll 3=usleep 4=yield 5=pthread_cond\n");
     return -1;
   }
 
@@ -176,6 +206,7 @@ int main(int argc, char **argv)
     case SLEEP_TYPE_POLL:   tinfo.func = &do_work_poll;    break;
     case SLEEP_TYPE_USLEEP: tinfo.func = &do_work_usleep;  break;
     case SLEEP_TYPE_YIELD:  tinfo.func = &do_work_yield;   break;
+    case SLEEP_TYPE_PTHREAD_COND:  tinfo.func = &do_work_pthread_cond;   break;
     default:
       printf("Invalid sleep type: %d\n", sleep_type);
       return -7;

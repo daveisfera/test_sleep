@@ -1,6 +1,6 @@
 CC	= gcc
 CFLAGS	= -Wall -Wextra -O2
-LIBS	= -lm -lpthread
+LIBS	= -lm -lpthread -lrt
 
 test_sleep: test_sleep.o
 	$(CC) -o $@ $(filter %.o,$^) $(LIBS)
