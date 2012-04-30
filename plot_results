@@ -25,4 +25,4 @@ do
 done
 
 # Plot the results with gnuplot
-gnuplot -p results.gp
+gnuplot -persist results.gp
