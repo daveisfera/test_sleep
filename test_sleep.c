@@ -248,8 +248,13 @@ int main(int argc, char **argv)
   }
 
   // Calculate the statistics of the processing
+#ifdef LLONG_MAX
   long long min_time = LLONG_MAX;
   long long max_time = LLONG_MIN;
+#else
+  long long min_time = LONG_MAX;
+  long long max_time = LONG_MIN;
+#endif
   double avg_time = 0;
   double prev_avg_time = 0;
   double stddev_time = 0;
