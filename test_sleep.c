@@ -1,8 +1,9 @@
-#include <float.h>
+#include <limits.h>
 #include <math.h>
 #include <poll.h>
 #include <pthread.h>
 #include <stdio.h>
+#include <sched.h>
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
@@ -247,11 +248,11 @@ int main(int argc, char **argv)
   }
 
   // Calculate the statistics of the processing
-  float min_time = FLT_MAX;
-  float max_time = -FLT_MAX;
-  float avg_time = 0;
-  float prev_avg_time = 0;
-  float stddev_time = 0;
+  long long min_time = LLONG_MAX;
+  long long max_time = LLONG_MIN;
+  double avg_time = 0;
+  double prev_avg_time = 0;
+  double stddev_time = 0;
 
   // Perform the requested number of outer iterations
   for (inum=0; inum<outer_iterations; ++inum) {
@@ -294,7 +295,7 @@ int main(int argc, char **argv)
         min_time = times[tnum];
       if (times[tnum] > max_time)
         max_time = times[tnum];
-      avg_time += (times[tnum] - avg_time) / (float)(tnum + 1);
+      avg_time += (times[tnum] - avg_time) / (double)(tnum + 1);
       stddev_time += (times[tnum] - prev_avg_time) * (times[tnum] - avg_time);
       prev_avg_time = avg_time;
     }
@@ -305,9 +306,9 @@ int main(int argc, char **argv)
 
   // Print out the statistics of the times
   printf("time_per_iteration: min: %.1f us avg: %.1f us max: %.1f us stddev: %.1f us\n",
-      min_time / tinfo.num_iterations,
+      min_time / (double)tinfo.num_iterations,
       avg_time / tinfo.num_iterations,
-      max_time / tinfo.num_iterations,
+      max_time / (double)tinfo.num_iterations,
       stddev_time / tinfo.num_iterations);
 
   // Clean up the allocated threads
