@@ -296,17 +296,21 @@ int main(int argc, char **argv)
       free(res);
     }
 
-    // Update the statistics
+    // For each of the threads
     for (tnum=0; tnum<num_threads; ++tnum) {
+      // Increment the number of samples in the statistics
+      ++num_samples;
+      // Update the max and min
       if (times[tnum] < min_time)
         min_time = times[tnum];
       if (times[tnum] > max_time)
         max_time = times[tnum];
-      avg_time += (times[tnum] - avg_time) / (double)(num_samples + 1);
+      // Update the average
+      avg_time += (times[tnum] - avg_time) / (double)num_samples;
+      // Update the standard deviation
       stddev_time += (times[tnum] - prev_avg_time) * (times[tnum] - avg_time);
+      // And record the current average for use in the next update
       prev_avg_time = avg_time;
-      // Increment the number of samples in the statistics
-      ++num_samples;
     }
   }
 
