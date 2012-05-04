@@ -249,7 +249,7 @@ int main(int argc, char **argv)
   pthread_attr_t attr;
   pthread_t *threads;
   long long *res;
-  long long *times;
+  long long **times;
   // Track the stats for each of the measurements
   struct thread_res_stats stats_clock = THREAD_RES_STATS_INITIALIZER;
 
@@ -282,7 +282,7 @@ int main(int argc, char **argv)
 
   // Allocate the memory to track the threads
   threads = calloc(num_threads, sizeof(pthread_t));
-  times = calloc(num_threads, sizeof(long long));
+  times = calloc(num_threads, sizeof(long long *));
   if (threads == NULL) {
     printf("Error allocating memory to track threads\n");
     return -3;
@@ -311,19 +311,18 @@ int main(int argc, char **argv)
         return -6;
       }
 
-      // Save the time
-      times[tnum] = *res;
-
-      // And clean it up
-      free(res);
+      // Save the result for processing when they're all done
+      times[tnum] = res;
     }
 
     // For each of the threads
     for (tnum=0; tnum<num_threads; ++tnum) {
       // Increment the number of samples in the statistics
       ++num_samples;
-      // Update the statistics for each of the measurements
-      update_stats(&stats_clock, times[tnum], num_samples);
+      // Update the statistics with this measurement
+      update_stats(&stats_clock, *(times[tnum]), num_samples);
+      // And clean it up
+      free(times[tnum]);
     }
   }
 
