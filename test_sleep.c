@@ -192,8 +192,8 @@ void *do_test(void *arg)
 }
 
 struct thread_res_stats {
-  long long min;
-  long long max;
+  double min;
+  double max;
   double avg;
   double stddev;
   double prev_avg;
@@ -205,29 +205,32 @@ struct thread_res_stats {
   #define THREAD_RES_STATS_INITIALIZER {LONG_MAX, LONG_MIN, 0, 0, 0}
 #endif
 
-void update_stats(struct thread_res_stats *stats, long long value, int num_samples)
+void update_stats(struct thread_res_stats *stats, long long value, int num_samples, int num_iterations)
 {
+  // Calculate the average time per iteration
+  double value_per_iteration = value / (double)num_iterations;
+
   // Update the max and min
-  if (value < stats->min)
-    stats->min = value;
-  if (value > stats->max)
-    stats->max = value;
+  if (value_per_iteration < stats->min)
+    stats->min = value_per_iteration;
+  if (value_per_iteration > stats->max)
+    stats->max = value_per_iteration;
   // Update the average
-  stats->avg += (value - stats->avg) / (double)(num_samples);
+  stats->avg += (value_per_iteration - stats->avg) / (double)(num_samples);
   // Update the standard deviation
-  stats->stddev += (value - stats->prev_avg) * (value - stats->avg);
+  stats->stddev += (value_per_iteration - stats->prev_avg) * (value_per_iteration - stats->avg);
   // And record the current average for use in the next update
   stats->prev_avg= stats->avg;
 }
 
-void print_stats(const char *name, const struct thread_res_stats *stats, int num_iterations)
+void print_stats(const char *name, const struct thread_res_stats *stats)
 {
   printf("%s: min: %.1f us avg: %.1f us max: %.1f us stddev: %.1f us\n",
       name,
-      stats->min / (double)num_iterations,
-      stats->avg / num_iterations,
-      stats->max / (double)num_iterations,
-      stats->stddev / num_iterations);
+      stats->min,
+      stats->avg,
+      stats->max,
+      stats->stddev);
 }
 
 int main(int argc, char **argv)
@@ -320,7 +323,7 @@ int main(int argc, char **argv)
       // Increment the number of samples in the statistics
       ++num_samples;
       // Update the statistics with this measurement
-      update_stats(&stats_clock, *(times[tnum]), num_samples);
+      update_stats(&stats_clock, *(times[tnum]), num_samples, tinfo.num_iterations);
       // And clean it up
       free(times[tnum]);
     }
@@ -337,7 +340,7 @@ int main(int argc, char **argv)
   stats_clock.stddev = sqrtf(stats_clock.stddev / (num_samples - 1));
 
   // Print out the statistics of the times
-  print_stats("gettimeofday_per_iteration", &stats_clock, tinfo.num_iterations);
+  print_stats("gettimeofday_per_iteration", &stats_clock);
 
   // Clean up the allocated threads and times
   free(threads);
