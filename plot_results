@@ -1,28 +1,41 @@
 #!/bin/bash
 
-if [ $# -ne 1 ]; then
-	echo "Usage: `basename $0` <max_sleep_type>"
+if [ $# -ne 2 ]; then
+	echo "Usage: `basename $0` <max_sleep_type> <test_name>"
 	exit -1
 fi
+
+# Make sure the directory exists
+if [ ! -d $2 ]; then
+  echo "$2 doesn't exist"
+  exit -1
+fi
+
+max_sleep_type=$1
+test_name=$2
 
 # The names of each of the SLEEP_TYPES
 names=( "none" "select" "poll" "usleep" "sched_yield" "pthread_cond" "nanosleep" )
 
 # Create the file to plot the results using gnuplot
-echo "set key left top;" > results.gp
-echo "plot \\" >> results.gp
-for i in $(seq 0 $1)
+gpfile="$test_name/results.gp"
+echo "set key left top;" > $gpfile
+echo "set title '$test_name';" >> $gpfile
+echo "set xlabel 'Number of Threads';" >> $gpfile
+echo "set ylabel 'Time per Iteration (us)';" >> $gpfile
+echo "plot \\" >> $gpfile
+for i in $(seq 0 $max_sleep_type)
 do
 	# Convert the results file to a format for gnuplot
-	awk '{print NR, $6, $12}' "results_$i.txt" > "results_$i.dat"
+	awk '{print NR, $6, $12}' "$test_name/results_$i.txt" > "$test_name/results_$i.dat"
 	# Add the plot command to gnuplot
-	echo "'results_$i.dat' title '${names[$i]}' w errorlines \\" >> results.gp
-	if [ $i -eq $1 ]; then
-		echo "; \\" >> results.gp
+	echo "'$test_name/results_$i.dat' title '${names[$i]}' w errorlines \\" >> $gpfile
+	if [ $i -eq $max_sleep_type ]; then
+		echo "; \\" >> $gpfile
 	else
-		echo ", \\" >> results.gp
+		echo ", \\" >> $gpfile
 	fi
 done
 
 # Plot the results with gnuplot
-gnuplot -persist results.gp
+gnuplot -persist $gpfile

@@ -1,23 +1,37 @@
 #!/bin/bash
 
-if [ $# -ne 6 ]; then
-	echo "Usage: `basename $0` <sleep_time> <outer_iterations> <inner_iterations> <work_size> <max_num_threads> <max_sleep_type>"
+if [ $# -ne 7 ]; then
+	echo "Usage: `basename $0` <sleep_time> <outer_iterations> <inner_iterations> <work_size> <max_num_threads> <max_sleep_type> <test_name>"
 	echo "  max_num_threads: The highest value used for num_threads in the results"
 	echo "  max_sleep_type: The highest value used for sleep_type in the results"
+  echo "  test_name: The name of the directory where the results will be stored"
 	exit -1
 fi
 
+sleep_time=$1
+outer_iterations=$2
+inner_iterations=$3
+work_size=$4
+max_num_threads=$5
+max_sleep_type=$6
+test_name=$7
+
+# Make sure this results directory doesn't already exist
+if [ -e $test_name ]; then
+  echo "$test_name already exists";
+  exit -1;
+fi
+# Create the directory to put the results in
+mkdir $test_name
 # Run through the requested number of SLEEP_TYPE values
-for i in $(seq 0 $6)
+for i in $(seq 0 $max_sleep_type)
 do
-	# Remove any existing results file
-	rm -f "results_$i.txt"
 	# Run through the requested number of threads
-	for j in $(seq 1 $5)
+	for j in $(seq 1 $max_num_threads)
 	do
 		# Print which settings are about to be run
 		echo "sleep_type: $i num_threads: $j"
 		# Run the test and save it to the results file
-		./test_sleep $1 $2 $3 $4 $j $i >> "results_$i.txt"
+		./test_sleep $sleep_time $outer_iterations $inner_iterations $work_size $j $i >> "$test_name/results_$i.txt"
 	done
 done
