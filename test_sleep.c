@@ -206,7 +206,7 @@ int main(int argc, char **argv)
   struct thread_info tinfo;
   int outer_iterations;
   int sleep_type;
-  int s, inum, tnum, num_threads;
+  int s, inum, tnum, num_samples, num_threads;
   pthread_attr_t attr;
   pthread_t *threads;
   long long *res;
@@ -254,6 +254,8 @@ int main(int argc, char **argv)
   double prev_avg_time = 0;
   double stddev_time = 0;
 
+  // Initialize the number of samples
+  num_samples = 0;
   // Perform the requested number of outer iterations
   for (inum=0; inum<outer_iterations; ++inum) {
     // Start all of the threads
@@ -295,14 +297,16 @@ int main(int argc, char **argv)
         min_time = times[tnum];
       if (times[tnum] > max_time)
         max_time = times[tnum];
-      avg_time += (times[tnum] - avg_time) / (double)(tnum + 1);
+      avg_time += (times[tnum] - avg_time) / (double)(num_samples + 1);
       stddev_time += (times[tnum] - prev_avg_time) * (times[tnum] - avg_time);
       prev_avg_time = avg_time;
+      // Increment the number of samples in the statistics
+      ++num_samples;
     }
   }
 
   // Finish the calculation of the standard deviation
-  stddev_time = sqrtf(stddev_time / ((outer_iterations * num_threads) - 1));
+  stddev_time = sqrtf(stddev_time / (num_samples - 1));
 
   // Print out the statistics of the times
   printf("time_per_iteration: min: %.1f us avg: %.1f us max: %.1f us stddev: %.1f us\n",
