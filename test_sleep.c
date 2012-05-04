@@ -8,8 +8,17 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/select.h>
+#include <sys/syscall.h>
 #include <sys/time.h>
 
+
+// Apparently GLIBC doesn't provide a wrapper for this function so provide it here
+#ifndef HAS_GETTID
+pid_t gettid(void)
+{
+  return syscall(SYS_gettid);
+}
+#endif
 
 
 // The different type of sleep that are supported
@@ -23,16 +32,44 @@ enum sleep_type {
   SLEEP_TYPE_NANOSLEEP,
 };
 
+// Information returned by the processing thread
+struct thread_res {
+  long long clock;
+  long long user;
+  long long sys;
+};
+
 // Function type for doing work with a sleep
-typedef long long *(*work_func)(const int sleep_time, const int num_iterations, const int work_size);
+typedef struct thread_res *(*work_func)(const int pid, const int sleep_time, const int num_iterations, const int work_size);
 
 // Information passed to the thread
 struct thread_info {
+  pid_t pid;
   int sleep_time;
   int num_iterations;
   int work_size;
   work_func func;
 };
+
+
+inline void get_thread_times(pid_t pid, pid_t tid, unsigned long long *utime, unsigned long long *stime)
+{
+  char filename[FILENAME_MAX];
+  FILE *f;
+
+  sprintf(filename, "/proc/%d/task/%d/stat", pid, tid);
+  f = fopen(filename, "r");
+
+  if (f == NULL) {
+    *utime = 0;
+    *stime = 0;
+    return;
+  }
+
+  fscanf(f, "%*d %*s %*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %Lu %Lu", utime, stime);
+
+  fclose(f);
+}
 
 // In order to make SLEEP_TYPE a run-time parameter function pointers are used.
 // The function pointer could have been to the sleep function being used, but
@@ -43,16 +80,21 @@ struct thread_info {
 // is a bit uglier this way, but I believe it results in a more accurate test.
 
 // Fill in a buffer with random numbers (taken from latt.c by Jens Axboe <jens.axboe@oracle.com>)
-#define DECLARE_FUNC(NAME) long long *do_work_##NAME(const int sleep_time, const int num_iterations, const int work_size)
+#define DECLARE_FUNC(NAME) struct thread_res *do_work_##NAME(const int pid, const int sleep_time, const int num_iterations, const int work_size)
 
 #define DECLARE_WORK() \
   int *buf; \
   int pseed; \
   int inum, bnum; \
+  pid_t tid; \
   struct timeval clock_before, clock_after; \
-  long long *diff; \
+  unsigned long long user_before, user_after; \
+  unsigned long long sys_before, sys_after; \
+  struct thread_res *diff; \
+  tid = gettid(); \
   buf = malloc(work_size * sizeof(*buf)); \
   diff = malloc(sizeof(*diff)); \
+  get_thread_times(pid, tid, &user_before, &sys_before); \
   gettimeofday(&clock_before, NULL)
   
 #define DO_WORK(SLEEP_FUNC) \
@@ -68,8 +110,11 @@ struct thread_info {
 
 #define FINISH_WORK() \
   gettimeofday(&clock_after, NULL); \
-  *diff = 1000000LL * (clock_after.tv_sec - clock_before.tv_sec); \
-  *diff += clock_after.tv_usec - clock_before.tv_usec; \
+  get_thread_times(pid, tid, &user_after, &sys_after); \
+  diff->clock = 1000000LL * (clock_after.tv_sec - clock_before.tv_sec); \
+  diff->clock += clock_after.tv_usec - clock_before.tv_usec; \
+  diff->user = user_after - user_before; \
+  diff->sys = sys_after - sys_before; \
   free(buf); \
   return diff
 
@@ -188,7 +233,7 @@ void *do_test(void *arg)
   const struct thread_info *tinfo = (struct thread_info *)arg;
 
   // Call the function to do the work
-  return (*tinfo->func)(tinfo->sleep_time, tinfo->num_iterations, tinfo->work_size);
+  return (*tinfo->func)(tinfo->pid, tinfo->sleep_time, tinfo->num_iterations, tinfo->work_size);
 }
 
 struct thread_res_stats {
@@ -205,10 +250,10 @@ struct thread_res_stats {
   #define THREAD_RES_STATS_INITIALIZER {LONG_MAX, LONG_MIN, 0, 0, 0}
 #endif
 
-void update_stats(struct thread_res_stats *stats, long long value, int num_samples, int num_iterations)
+void update_stats(struct thread_res_stats *stats, long long value, int num_samples, int num_iterations, double scale_to_usecs)
 {
   // Calculate the average time per iteration
-  double value_per_iteration = value / (double)num_iterations;
+  double value_per_iteration = value * scale_to_usecs / num_iterations;
 
   // Update the max and min
   if (value_per_iteration < stats->min)
@@ -251,12 +296,18 @@ int main(int argc, char **argv)
   int s, inum, tnum, num_samples, num_threads;
   pthread_attr_t attr;
   pthread_t *threads;
-  long long *res;
-  long long **times;
+  struct thread_res *res;
+  struct thread_res **times;
   // Track the stats for each of the measurements
   struct thread_res_stats stats_clock = THREAD_RES_STATS_INITIALIZER;
+  struct thread_res_stats stats_user = THREAD_RES_STATS_INITIALIZER;
+  struct thread_res_stats stats_sys = THREAD_RES_STATS_INITIALIZER;
+  // Calculate the conversion factor from clock_t to seconds
+  const long clocks_per_sec = sysconf(_SC_CLK_TCK);
+  const double clocks_to_usec = 1000000 / (double)clocks_per_sec;
 
   // Get the parameters
+  tinfo.pid = getpid();
   tinfo.sleep_time = atoi(argv[1]);
   outer_iterations = atoi(argv[2]);
   tinfo.num_iterations = atoi(argv[3]);
@@ -323,7 +374,9 @@ int main(int argc, char **argv)
       // Increment the number of samples in the statistics
       ++num_samples;
       // Update the statistics with this measurement
-      update_stats(&stats_clock, *(times[tnum]), num_samples, tinfo.num_iterations);
+      update_stats(&stats_clock, times[tnum]->clock, num_samples, tinfo.num_iterations, 1);
+      update_stats(&stats_user, times[tnum]->user, num_samples, tinfo.num_iterations, clocks_to_usec);
+      update_stats(&stats_sys, times[tnum]->sys, num_samples, tinfo.num_iterations, clocks_to_usec);
       // And clean it up
       free(times[tnum]);
     }
@@ -338,9 +391,13 @@ int main(int argc, char **argv)
 
   // Finish the calculation of the standard deviation
   stats_clock.stddev = sqrtf(stats_clock.stddev / (num_samples - 1));
+  stats_user.stddev = sqrtf(stats_user.stddev / (num_samples - 1));
+  stats_sys.stddev = sqrtf(stats_sys.stddev / (num_samples - 1));
 
   // Print out the statistics of the times
   print_stats("gettimeofday_per_iteration", &stats_clock);
+  print_stats("utime_per_iteration", &stats_user);
+  print_stats("stime_per_iteration", &stats_sys);
 
   // Clean up the allocated threads and times
   free(threads);

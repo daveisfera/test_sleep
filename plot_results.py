@@ -6,6 +6,8 @@ import sys
 
 # The names of each of the SLEEP_TYPES
 SLEEP_TYPE_NAMES = [ "none", "select", "poll", "usleep", "sched_yield", "pthread_cond", "nanosleep" ]
+# The names of the different types of plots
+PLOT_TYPE_NAMES = ['gettimeofday', 'User Time', 'System Time']
 
 def make_gnuplot(commands, data, make_svg):
     # Create the arguments to call gnuplot with
@@ -18,11 +20,11 @@ def make_gnuplot(commands, data, make_svg):
             program.stdin.write(line + os.linesep)
         program.stdin.write('e' + os.linesep)
 
-def plot_results(test_name, make_svg):
+def plot_results(test_name, make_svg, type):
     # Setup the properties of the plot
     commands = [
         "set key top left",
-        "set title '%s'" % test_name,
+        "set title '%s %s'" % (test_name, PLOT_TYPE_NAMES[type]),
         "set xlabel 'Number of Threads'",
         "set ylabel 'Time per Iteration (us)'"
         ]
@@ -42,11 +44,16 @@ def plot_results(test_name, make_svg):
         d = []
         # Process each of the lines
         for i, line in enumerate(f):
+            # Skip this line if it doesn't matters for this type of plot
+            if not (i % 3) == type:
+                continue
+            # Get the individual tokens
             v = line.split()
-            # And add the number of threads ax
-            num_threads = i + 1
+            # Get the values that we're interested in
+            num_threads = (i / 3) + 1
             avg_time = float(v[5])
             stddev_time = float(v[11])
+            # Add the it to the data
             d.append('%d %f %f' % (num_threads, avg_time, stddev_time))
         data.append(d)
 
@@ -68,7 +75,8 @@ if __name__ == '__main__':
         sys.exit(-1)
 
     # Check if it should create a .svg
-    make_svg = len(sys.argv) >= 3 and sys.argv[2].lower() in ('y', 'yes', 'svg')
+    make_svg = len(sys.argv) >= 4 and sys.argv[3].lower() in ('y', 'yes', 'svg')
 
     # Plot the results of the given test
-    plot_results(sys.argv[1], make_svg)
+    for type in range(3):
+        plot_results(sys.argv[1], make_svg, type)
