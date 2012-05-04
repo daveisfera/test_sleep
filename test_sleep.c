@@ -51,8 +51,8 @@ struct thread_info {
   int inum, bnum; \
   struct timeval clock_before, clock_after; \
   long long *diff; \
-  buf = malloc(work_size * sizeof(int)); \
-  diff = malloc(sizeof(long long)); \
+  buf = malloc(work_size * sizeof(*buf)); \
+  diff = malloc(sizeof(*diff)); \
   gettimeofday(&clock_before, NULL)
   
 #define DO_WORK(SLEEP_FUNC) \
@@ -281,8 +281,8 @@ int main(int argc, char **argv)
   }
 
   // Allocate the memory to track the threads
-  threads = calloc(num_threads, sizeof(pthread_t));
-  times = calloc(num_threads, sizeof(long long *));
+  threads = calloc(num_threads, sizeof(*threads));
+  times = calloc(num_threads, sizeof(*times));
   if (threads == NULL) {
     printf("Error allocating memory to track threads\n");
     return -3;
@@ -339,8 +339,9 @@ int main(int argc, char **argv)
   // Print out the statistics of the times
   print_stats("gettimeofday_per_iteration", &stats_clock, tinfo.num_iterations);
 
-  // Clean up the allocated threads
+  // Clean up the allocated threads and times
   free(threads);
+  free(times);
 
   return 0;
 }
