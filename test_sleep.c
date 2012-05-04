@@ -2,8 +2,8 @@
 #include <math.h>
 #include <poll.h>
 #include <pthread.h>
-#include <stdio.h>
 #include <sched.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
@@ -49,11 +49,11 @@ struct thread_info {
   int *buf; \
   int pseed; \
   int inum, bnum; \
-  struct timeval before, after; \
+  struct timeval clock_before, clock_after; \
   long long *diff; \
-  buf = calloc(work_size, sizeof(int)); \
+  buf = malloc(work_size * sizeof(int)); \
   diff = malloc(sizeof(long long)); \
-  gettimeofday(&before, NULL)
+  gettimeofday(&clock_before, NULL)
   
 #define DO_WORK(SLEEP_FUNC) \
   for (inum=0; inum<num_iterations; ++inum) { \
@@ -67,9 +67,9 @@ struct thread_info {
   } \
 
 #define FINISH_WORK() \
-  gettimeofday(&after, NULL); \
-  *diff = 1000000LL * (after.tv_sec - before.tv_sec); \
-  *diff += after.tv_usec - before.tv_usec; \
+  gettimeofday(&clock_after, NULL); \
+  *diff = 1000000LL * (clock_after.tv_sec - clock_before.tv_sec); \
+  *diff += clock_after.tv_usec - clock_before.tv_usec; \
   free(buf); \
   return diff
 
@@ -191,6 +191,45 @@ void *do_test(void *arg)
   return (*tinfo->func)(tinfo->sleep_time, tinfo->num_iterations, tinfo->work_size);
 }
 
+struct thread_res_stats {
+  long long min;
+  long long max;
+  double avg;
+  double stddev;
+  double prev_avg;
+};
+
+#ifdef LLONG_MAX
+  #define THREAD_RES_STATS_INITIALIZER {LLONG_MAX, LLONG_MIN, 0, 0, 0}
+#else
+  #define THREAD_RES_STATS_INITIALIZER {LONG_MAX, LONG_MIN, 0, 0, 0}
+#endif
+
+void update_stats(struct thread_res_stats *stats, long long value, int num_samples)
+{
+  // Update the max and min
+  if (value < stats->min)
+    stats->min = value;
+  if (value > stats->max)
+    stats->max = value;
+  // Update the average
+  stats->avg += (value - stats->avg) / (double)(num_samples);
+  // Update the standard deviation
+  stats->stddev += (value - stats->prev_avg) * (value - stats->avg);
+  // And record the current average for use in the next update
+  stats->prev_avg= stats->avg;
+}
+
+void print_stats(const char *name, const struct thread_res_stats *stats, int num_iterations)
+{
+  printf("%s: min: %.1f us avg: %.1f us max: %.1f us stddev: %.1f us\n",
+      name,
+      stats->min / (double)num_iterations,
+      stats->avg / num_iterations,
+      stats->max / (double)num_iterations,
+      stats->stddev / num_iterations);
+}
+
 int main(int argc, char **argv)
 {
   if (argc <= 6) {
@@ -211,6 +250,8 @@ int main(int argc, char **argv)
   pthread_t *threads;
   long long *res;
   long long *times;
+  // Track the stats for each of the measurements
+  struct thread_res_stats stats_clock = THREAD_RES_STATS_INITIALIZER;
 
   // Get the parameters
   tinfo.sleep_time = atoi(argv[1]);
@@ -241,23 +282,11 @@ int main(int argc, char **argv)
 
   // Allocate the memory to track the threads
   threads = calloc(num_threads, sizeof(pthread_t));
-  times = calloc(num_threads, sizeof(unsigned long long));
+  times = calloc(num_threads, sizeof(long long));
   if (threads == NULL) {
     printf("Error allocating memory to track threads\n");
     return -3;
   }
-
-  // Calculate the statistics of the processing
-#ifdef LLONG_MAX
-  long long min_time = LLONG_MAX;
-  long long max_time = LLONG_MIN;
-#else
-  long long min_time = LONG_MAX;
-  long long max_time = LONG_MIN;
-#endif
-  double avg_time = 0;
-  double prev_avg_time = 0;
-  double stddev_time = 0;
 
   // Initialize the number of samples
   num_samples = 0;
@@ -293,17 +322,8 @@ int main(int argc, char **argv)
     for (tnum=0; tnum<num_threads; ++tnum) {
       // Increment the number of samples in the statistics
       ++num_samples;
-      // Update the max and min
-      if (times[tnum] < min_time)
-        min_time = times[tnum];
-      if (times[tnum] > max_time)
-        max_time = times[tnum];
-      // Update the average
-      avg_time += (times[tnum] - avg_time) / (double)num_samples;
-      // Update the standard deviation
-      stddev_time += (times[tnum] - prev_avg_time) * (times[tnum] - avg_time);
-      // And record the current average for use in the next update
-      prev_avg_time = avg_time;
+      // Update the statistics for each of the measurements
+      update_stats(&stats_clock, times[tnum], num_samples);
     }
   }
 
@@ -315,14 +335,10 @@ int main(int argc, char **argv)
   }
 
   // Finish the calculation of the standard deviation
-  stddev_time = sqrtf(stddev_time / (num_samples - 1));
+  stats_clock.stddev = sqrtf(stats_clock.stddev / (num_samples - 1));
 
   // Print out the statistics of the times
-  printf("time_per_iteration: min: %.1f us avg: %.1f us max: %.1f us stddev: %.1f us\n",
-      min_time / (double)tinfo.num_iterations,
-      avg_time / tinfo.num_iterations,
-      max_time / (double)tinfo.num_iterations,
-      stddev_time / tinfo.num_iterations);
+  print_stats("gettimeofday_per_iteration", &stats_clock, tinfo.num_iterations);
 
   // Clean up the allocated threads
   free(threads);
