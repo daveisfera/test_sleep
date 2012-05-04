@@ -42,6 +42,8 @@ struct thread_info {
 // is a bit uglier this way, but I believe it results in a more accurate test.
 
 // Fill in a buffer with random numbers (taken from latt.c by Jens Axboe <jens.axboe@oracle.com>)
+#define DECLARE_FUNC(NAME) long long *do_work_##NAME(const int sleep_time, const int num_iterations, const int work_size)
+
 #define DECLARE_WORK() \
   int *buf; \
   int pseed; \
@@ -70,7 +72,7 @@ struct thread_info {
   free(buf); \
   return diff
 
-long long *do_work_nosleep(const int sleep_time, const int num_iterations, const int work_size)
+DECLARE_FUNC(nosleep)
 {
   DECLARE_WORK();
 
@@ -82,7 +84,7 @@ long long *do_work_nosleep(const int sleep_time, const int num_iterations, const
   FINISH_WORK();
 }
 
-long long *do_work_select(const int sleep_time, const int num_iterations, const int work_size)
+DECLARE_FUNC(select)
 {
   struct timeval ts;
   DECLARE_WORK();
@@ -96,7 +98,7 @@ long long *do_work_select(const int sleep_time, const int num_iterations, const 
   FINISH_WORK();
 }
 
-long long *do_work_poll(const int sleep_time, const int num_iterations, const int work_size)
+DECLARE_FUNC(poll)
 {
   struct pollfd pfd;
   const int sleep_time_ms = sleep_time / 1000;
@@ -112,7 +114,7 @@ long long *do_work_poll(const int sleep_time, const int num_iterations, const in
   FINISH_WORK();
 }
 
-long long *do_work_usleep(const int sleep_time, const int num_iterations, const int work_size)
+DECLARE_FUNC(usleep)
 {
   DECLARE_WORK();
 
@@ -123,7 +125,7 @@ long long *do_work_usleep(const int sleep_time, const int num_iterations, const 
   FINISH_WORK();
 }
 
-long long *do_work_yield(const int sleep_time, const int num_iterations, const int work_size)
+DECLARE_FUNC(yield)
 {
   DECLARE_WORK();
 
@@ -137,7 +139,7 @@ long long *do_work_yield(const int sleep_time, const int num_iterations, const i
   FINISH_WORK();
 }
 
-long long *do_work_pthread_cond(const int sleep_time, const int num_iterations, const int work_size)
+DECLARE_FUNC(pthread_cond)
 {
   pthread_cond_t cond  = PTHREAD_COND_INITIALIZER;
   pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -165,7 +167,7 @@ long long *do_work_pthread_cond(const int sleep_time, const int num_iterations, 
   FINISH_WORK();
 }
 
-long long *do_work_nanosleep(const int sleep_time, const int num_iterations, const int work_size)
+DECLARE_FUNC(nanosleep)
 {
   struct timespec req, rem;
   const int sleep_time_ns = sleep_time * 1000;
