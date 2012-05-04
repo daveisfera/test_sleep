@@ -273,13 +273,6 @@ int main(int argc, char **argv)
       }
     }
 
-    // Clean up the thread creation attributes
-    s = pthread_attr_destroy(&attr);
-    if (s != 0) {
-      printf("Error cleaning up thread attributes\n");
-      return -5;
-    }
-
     // Wait for all the threads to finish
     for (tnum=0; tnum<num_threads; ++tnum) {
       s = pthread_join(threads[tnum], (void **)(&res));
@@ -312,6 +305,13 @@ int main(int argc, char **argv)
       // And record the current average for use in the next update
       prev_avg_time = avg_time;
     }
+  }
+
+  // Clean up the thread creation attributes
+  s = pthread_attr_destroy(&attr);
+  if (s != 0) {
+    printf("Error cleaning up thread attributes\n");
+    return -5;
   }
 
   // Finish the calculation of the standard deviation
