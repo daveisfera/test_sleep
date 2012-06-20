@@ -66,7 +66,8 @@ inline void get_thread_times(pid_t pid, pid_t tid, unsigned long long *utime, un
     return;
   }
 
-  fscanf(f, "%*d %*s %*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %Lu %Lu", utime, stime);
+  if (fscanf(f, "%*d %*s %*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %Lu %Lu", utime, stime) != 2)
+    printf("Error reading thread times for pid %u tid %u\n", pid, tid);
 
   fclose(f);
 }
