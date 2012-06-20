@@ -250,7 +250,7 @@ struct thread_res_stats {
   #define THREAD_RES_STATS_INITIALIZER {LONG_MAX, LONG_MIN, 0, 0, 0}
 #endif
 
-void update_stats(struct thread_res_stats *stats, long long value, int num_samples, int num_iterations, double scale_to_usecs)
+void update_stats(struct thread_res_stats *stats, double value, int num_samples, int num_iterations, double scale_to_usecs)
 {
   // Calculate the average time per iteration
   double value_per_iteration = value * scale_to_usecs / num_iterations;
@@ -293,6 +293,7 @@ int main(int argc, char **argv)
   struct thread_info tinfo;
   int outer_iterations;
   int sleep_type;
+  int does_sleep;
   int s, inum, tnum, num_samples, num_threads;
   pthread_attr_t attr;
   pthread_t *threads;
@@ -305,6 +306,8 @@ int main(int argc, char **argv)
   // Calculate the conversion factor from clock_t to seconds
   const long clocks_per_sec = sysconf(_SC_CLK_TCK);
   const double clocks_to_usec = 1000000 / (double)clocks_per_sec;
+  // Get the number of CPUs and online CPUs
+  const long num_online_cpus = sysconf(_SC_NPROCESSORS_ONLN);
 
   // Get the parameters
   tinfo.pid = getpid();
@@ -326,6 +329,9 @@ int main(int argc, char **argv)
       printf("Invalid sleep type: %d\n", sleep_type);
       return -7;
   }
+
+  // Check if this sleep type actually sleeps
+  does_sleep = !((sleep_type == SLEEP_TYPE_NONE) || (sleep_type == SLEEP_TYPE_YIELD));
 
   // Initialize the thread creation attributes
   s = pthread_attr_init(&attr);
@@ -369,12 +375,39 @@ int main(int argc, char **argv)
       times[tnum] = res;
     }
 
+    // Calculate the scalar for the clock
+    // NOTE: The purpose of this scalar is to "flatten" the time measured by
+    // gettimeofday so it needs to account for the initial flat part of the
+    // curve that occurs when there are enough CPUs to handle all of the threads
+    // and the linear part of the curve that starts once there are more threads
+    // than CPUs
+    double clock_scalar;
+    // If this sleep type actually sleeps (i.e. doubles the wall time)
+    if (does_sleep) {
+      // If there's enough CPUs for half the threads to be working and half to be sleeping
+      if (num_threads <= 2 * num_online_cpus) {
+        // Then the scalar should be 1/2 to account for the sleeping
+        clock_scalar = 0.5;
+      } else {
+        // Otherwise, account for the fact that there are more than 2x more threads than CPUs
+        clock_scalar = num_online_cpus / (double)num_threads;
+      }
+    } else {
+      // If there's enough CPUs for all the threads to be working
+      if (num_threads <= num_online_cpus) {
+        // Then the scalar should be 1 because there's no sleeping
+        clock_scalar = 1;
+      } else {
+        // Otherwise, acount for the fact that there are more threads than CPUs
+        clock_scalar = num_online_cpus / (double)num_threads;
+      }
+    }
     // For each of the threads
     for (tnum=0; tnum<num_threads; ++tnum) {
       // Increment the number of samples in the statistics
       ++num_samples;
       // Update the statistics with this measurement
-      update_stats(&stats_clock, times[tnum]->clock, num_samples, tinfo.num_iterations, 1);
+      update_stats(&stats_clock, times[tnum]->clock * clock_scalar, num_samples, tinfo.num_iterations, 1);
       update_stats(&stats_user, times[tnum]->user, num_samples, tinfo.num_iterations, clocks_to_usec);
       update_stats(&stats_sys, times[tnum]->sys, num_samples, tinfo.num_iterations, clocks_to_usec);
       // And clean it up
