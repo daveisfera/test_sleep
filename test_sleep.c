@@ -24,10 +24,10 @@ pid_t gettid(void)
 // The different type of sleep that are supported
 enum sleep_type {
   SLEEP_TYPE_NONE,
+  SLEEP_TYPE_YIELD,
   SLEEP_TYPE_SELECT,
   SLEEP_TYPE_POLL,
   SLEEP_TYPE_USLEEP,
-  SLEEP_TYPE_YIELD,
   SLEEP_TYPE_PTHREAD_COND,
   SLEEP_TYPE_NANOSLEEP,
 };
@@ -284,7 +284,7 @@ int main(int argc, char **argv)
     printf("  inner_iterations: Number of work/sleep cycles performed in each thread (used to improve consistency/observability))\n");
     printf("  work_size: Number of iterations (in k) that the psuedo-random number calculation is performed\n");
     printf("  num_threads: Number of threads to spawn and perform work/sleep cycles in\n");
-    printf("  sleep_type: 0=none 1=select 2=poll 3=usleep 4=yield 5=pthread_cond 6=nanosleep\n");
+    printf("  sleep_type: 0=none 1=yield 2=select 3=poll 4=usleep 5=pthread_cond 6=nanosleep\n");
     return -1;
   }
 
@@ -317,10 +317,10 @@ int main(int argc, char **argv)
   sleep_type = atoi(argv[6]);
   switch (sleep_type) {
     case SLEEP_TYPE_NONE:   tinfo.func = &do_work_nosleep; break;
+    case SLEEP_TYPE_YIELD:  tinfo.func = &do_work_yield;   break;
     case SLEEP_TYPE_SELECT: tinfo.func = &do_work_select;  break;
     case SLEEP_TYPE_POLL:   tinfo.func = &do_work_poll;    break;
     case SLEEP_TYPE_USLEEP: tinfo.func = &do_work_usleep;  break;
-    case SLEEP_TYPE_YIELD:  tinfo.func = &do_work_yield;   break;
     case SLEEP_TYPE_PTHREAD_COND:  tinfo.func = &do_work_pthread_cond;   break;
     case SLEEP_TYPE_NANOSLEEP:  tinfo.func = &do_work_nanosleep;   break;
     default:

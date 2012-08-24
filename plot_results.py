@@ -5,7 +5,7 @@ import subprocess
 import sys
 
 # The names of each of the SLEEP_TYPES
-SLEEP_TYPE_NAMES = [ "none", "select", "poll", "usleep", "sched_yield", "pthread_cond", "nanosleep" ]
+SLEEP_TYPE_NAMES = [ "none", "sched_yield", "select", "poll", "usleep", "pthread_cond", "nanosleep" ]
 # The names of the different types of plots
 PLOT_TYPE_NAMES = ['gettimeofday', 'User Time', 'System Time']
 
