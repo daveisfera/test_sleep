@@ -84,7 +84,6 @@ inline void get_thread_times(pid_t pid, pid_t tid, unsigned long long *utime, un
 #define DECLARE_FUNC(NAME) struct thread_res *do_work_##NAME(const int pid, const int sleep_time, const int num_iterations, const int work_size)
 
 #define DECLARE_WORK() \
-  int *buf; \
   int pseed; \
   int inum, bnum; \
   pid_t tid; \
@@ -92,8 +91,8 @@ inline void get_thread_times(pid_t pid, pid_t tid, unsigned long long *utime, un
   unsigned long long user_before, user_after; \
   unsigned long long sys_before, sys_after; \
   struct thread_res *diff; \
+  pseed = 0; \
   tid = gettid(); \
-  buf = malloc(work_size * sizeof(*buf)); \
   diff = malloc(sizeof(*diff)); \
   get_thread_times(pid, tid, &user_before, &sys_before); \
   gettimeofday(&clock_before, NULL)
@@ -103,20 +102,18 @@ inline void get_thread_times(pid_t pid, pid_t tid, unsigned long long *utime, un
     SLEEP_FUNC \
      \
     pseed = 1; \
-    for (bnum=0; bnum<work_size; ++bnum) { \
+    for (bnum=0; bnum<work_size; ++bnum) \
       pseed = pseed * 1103515245 + 12345; \
-      buf[bnum] = (pseed / 65536) % 32768; \
-    } \
   } \
 
 #define FINISH_WORK() \
+  diff->clock = pseed; \
   gettimeofday(&clock_after, NULL); \
   get_thread_times(pid, tid, &user_after, &sys_after); \
   diff->clock = 1000000LL * (clock_after.tv_sec - clock_before.tv_sec); \
   diff->clock += clock_after.tv_usec - clock_before.tv_usec; \
   diff->user = user_after - user_before; \
   diff->sys = sys_after - sys_before; \
-  free(buf); \
   return diff
 
 DECLARE_FUNC(nosleep)
@@ -285,7 +282,7 @@ int main(int argc, char **argv)
     printf("Usage: %s <sleep_time> <outer_iterations> <inner_iterations> <work_size> <num_threads> <sleep_type>\n", argv[0]);
     printf("  outer_iterations: Number of iterations for each thread (used to calculate statistics)\n");
     printf("  inner_iterations: Number of work/sleep cycles performed in each thread (used to improve consistency/observability))\n");
-    printf("  work_size: Number of array elements (in kb) that are filled with psuedo-random numbers\n");
+    printf("  work_size: Number of iterations (in k) that the psuedo-random number calculation is performed\n");
     printf("  num_threads: Number of threads to spawn and perform work/sleep cycles in\n");
     printf("  sleep_type: 0=none 1=select 2=poll 3=usleep 4=yield 5=pthread_cond 6=nanosleep\n");
     return -1;
