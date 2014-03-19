@@ -12,6 +12,14 @@
 #include <sys/time.h>
 
 
+// Determine which clock to use for wall time
+#ifdef CLOCK_MONOTONIC_RAW
+#define TS_CLOCK_ID CLOCK_MONOTONIC_RAW
+#else
+#define TS_CLOCK_ID CLOCK_MONOTONIC
+#endif
+
+
 // Apparently GLIBC doesn't provide a wrapper for this function so provide it here
 #ifndef HAS_GETTID
 pid_t gettid(void)
@@ -87,31 +95,31 @@ inline void get_thread_times(pid_t pid, pid_t tid, unsigned long long *utime, un
   int pseed; \
   int inum, bnum; \
   pid_t tid; \
-  struct timeval clock_before, clock_after; \
+  struct timespec clock_before, clock_after; \
   unsigned long long user_before, user_after; \
   unsigned long long sys_before, sys_after; \
   struct thread_res *diff; \
-  pseed = 0; \
   tid = gettid(); \
   diff = malloc(sizeof(*diff)); \
   get_thread_times(pid, tid, &user_before, &sys_before); \
-  gettimeofday(&clock_before, NULL)
+  clock_gettime(TS_CLOCK_ID, &clock_before)
   
 #define DO_WORK(SLEEP_FUNC) \
+  pseed = 0; \
   for (inum=0; inum<num_iterations; ++inum) { \
     SLEEP_FUNC \
      \
     pseed = 1; \
     for (bnum=0; bnum<work_size; ++bnum) \
       pseed = pseed * 1103515245 + 12345; \
-  } \
+  }
 
 #define FINISH_WORK() \
   diff->clock = pseed; \
-  gettimeofday(&clock_after, NULL); \
+  clock_gettime(TS_CLOCK_ID, &clock_after); \
   get_thread_times(pid, tid, &user_after, &sys_after); \
-  diff->clock = 1000000LL * (clock_after.tv_sec - clock_before.tv_sec); \
-  diff->clock += clock_after.tv_usec - clock_before.tv_usec; \
+  diff->clock = 1000000000LL * (clock_after.tv_sec - clock_before.tv_sec); \
+  diff->clock += clock_after.tv_nsec - clock_before.tv_nsec; \
   diff->user = user_after - user_before; \
   diff->sys = sys_after - sys_before; \
   return diff
@@ -282,7 +290,7 @@ int main(int argc, char **argv)
     printf("Usage: %s <sleep_time> <outer_iterations> <inner_iterations> <work_size> <num_threads> <sleep_type>\n", argv[0]);
     printf("  outer_iterations: Number of iterations for each thread (used to calculate statistics)\n");
     printf("  inner_iterations: Number of work/sleep cycles performed in each thread (used to improve consistency/observability))\n");
-    printf("  work_size: Number of iterations (in k) that the psuedo-random number calculation is performed\n");
+    printf("  work_size: Number of array elements (in kb) that are filled with psuedo-random numbers\n");
     printf("  num_threads: Number of threads to spawn and perform work/sleep cycles in\n");
     printf("  sleep_type: 0=none 1=yield 2=select 3=poll 4=usleep 5=pthread_cond 6=nanosleep\n");
     return -1;
@@ -375,7 +383,7 @@ int main(int argc, char **argv)
 
     // Calculate the scalar for the clock
     // NOTE: The purpose of this scalar is to "flatten" the time measured by
-    // gettimeofday so it needs to account for the initial flat part of the
+    // clock_gettime so it needs to account for the initial flat part of the
     // curve that occurs when there are enough CPUs to handle all of the threads
     // and the linear part of the curve that starts once there are more threads
     // than CPUs
@@ -405,7 +413,7 @@ int main(int argc, char **argv)
       // Increment the number of samples in the statistics
       ++num_samples;
       // Update the statistics with this measurement
-      update_stats(&stats_clock, times[tnum]->clock * clock_scalar, num_samples, tinfo.num_iterations, 1);
+      update_stats(&stats_clock, times[tnum]->clock * clock_scalar, num_samples, tinfo.num_iterations, 1 / 1000.0);
       update_stats(&stats_user, times[tnum]->user, num_samples, tinfo.num_iterations, clocks_to_usec);
       update_stats(&stats_sys, times[tnum]->sys, num_samples, tinfo.num_iterations, clocks_to_usec);
       // And clean it up
@@ -426,7 +434,7 @@ int main(int argc, char **argv)
   stats_sys.stddev = sqrtf(stats_sys.stddev / (num_samples - 1));
 
   // Print out the statistics of the times
-  print_stats("gettimeofday_per_iteration", &stats_clock);
+  print_stats("clock_gettime_per_iteration", &stats_clock);
   print_stats("utime_per_iteration", &stats_user);
   print_stats("stime_per_iteration", &stats_sys);
 

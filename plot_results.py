@@ -7,7 +7,7 @@ import sys
 # The names of each of the SLEEP_TYPES
 SLEEP_TYPE_NAMES = [ "none", "sched_yield", "select", "poll", "usleep", "pthread_cond", "nanosleep" ]
 # The names of the different types of plots
-PLOT_TYPE_NAMES = ['gettimeofday', 'User Time', 'System Time']
+PLOT_TYPE_NAMES = ['clock_gettime', 'User Time', 'System Time']
 
 def make_gnuplot(commands, data, make_svg):
     # Create the arguments to call gnuplot with
